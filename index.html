@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>YAPP — Yet Another Pool Planner</title>
+<meta name="description" content="Spec a ZFS pool, see the splash before you make it. Layouts, live $/TB, failure-and-rebuild math, and a workload-driven recommender — all in one page.">
+<meta name="theme-color" content="#0ea5e9">
+<meta property="og:title" content="YAPP — Yet Another Pool Planner">
+<meta property="og:description" content="Spec a ZFS pool, see the splash before you make it. Layouts, live $/TB, failure math, and a workload-driven recommender.">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="YAPP — Yet Another Pool Planner">
+<meta name="twitter:description" content="Spec a ZFS pool, see the splash before you make it.">
+<link rel="icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' rx='3' fill='%230ea5e9'/><text x='8' y='12' text-anchor='middle' font-family='ui-sans-serif,system-ui,Helvetica,Arial,sans-serif' font-weight='900' font-size='12' fill='white' letter-spacing='-0.5'>Y</text></svg>">
+<link rel="stylesheet" href="styles.css">
+<script>
+  // Hide the wordmark until Archivo Black has resolved (avoids a FOUT swap).
+  // The font-loading promise can resolve before the body has parsed, so wait
+  // for both DOMContentLoaded and the font before flipping the class.
+  (function () {
+    var domReady = new Promise(function (r) {
+      if (document.readyState !== 'loading') r();
+      else document.addEventListener('DOMContentLoaded', r, { once: true });
+    });
+    var fontReady = (document.fonts && document.fonts.load)
+      ? document.fonts.load('900 22px "Archivo Black"').catch(function () {})
+      : Promise.resolve();
+    Promise.all([domReady, fontReady]).then(function () {
+      document.body.classList.add('fonts-ready');
+    });
+  })();
+</script>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="yapp-badge" aria-label="YAPP">
+      <span class="yapp-mark size-22">
+        <span class="base">YAPP</span>
+        <span class="stripes" aria-hidden="true">YAPP</span>
+      </span>
+    </span>
+    <span class="brand-sub">· yet another pool planner</span>
+  </div>
+  <div class="topbar-spacer"></div>
+  <button class="btn btn-ghost btn-bordered" id="resetBtn" title="Clear everything">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+    Reset all
+  </button>
+  <button class="btn btn-ghost btn-icon" id="themeToggle" title="Toggle theme">
+    <svg id="iconSun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+    <svg id="iconMoon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+  </button>
+</header>
+
+<main class="app">
+
+  <!-- POOL RECOMMENDER — flagship entry point: workload-driven search across the catalog -->
+  <section class="recommend-panel" id="recommendPanel">
+    <div class="recommend-head">
+      <div class="panel-head-text">
+        <div class="recommend-title">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 15 8.5 22 9.3l-5 4.9 1.2 7.1L12 17.8 5.8 21.3 7 14.2 2 9.3l7-.8z"/></svg>
+          Find the perfect pool
+        </div>
+        <div class="recommend-sub">Pick what you'll run on it. We'll search the catalog and recommend the cheapest pool that comfortably sustains the workload.</div>
+      </div>
+    </div>
+    <div class="recommend-form" id="recommendForm">
+      <!-- form fields injected by render/recommend.js -->
+    </div>
+    <div class="recommend-results" id="recommendResults"></div>
+  </section>
+
+  <!-- PRESETS — lightweight quick-start, alternative to the recommender -->
+  <section>
+    <div class="section-label">Or start from a preset</div>
+    <div class="presets-row" id="presetsRow"></div>
+  </section>
+
+  <!-- COMPOSER -->
+  <section class="composer" id="composer">
+    <div class="composer-header">
+      <div class="panel-head-text">
+        <div class="composer-title">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+          Describe your pool
+        </div>
+        <div class="composer-sub">Edit any chip below — the blueprint and stats update live.</div>
+      </div>
+      <div class="composer-actions">
+        <button class="btn btn-primary" id="saveBtn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+          Save as new pool
+        </button>
+      </div>
+    </div>
+    <div class="sentence" id="sentence"></div>
+  </section>
+
+  <!-- BLUEPRINT -->
+  <section class="blueprint">
+    <div class="bp-header">
+      <div class="panel-head-text">
+        <div class="bp-title">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+          Live blueprint
+        </div>
+        <div class="bp-sub" id="bpSub">— spec a pool, see the splash —</div>
+      </div>
+    </div>
+    <div class="bp-stage" id="bpStage"></div>
+    <div class="bp-stats" id="bpStats"></div>
+  </section>
+
+  <!-- LOAD SIMULATION -->
+  <section class="loadsim-panel">
+    <div class="loadsim-header">
+      <div class="panel-head-text">
+        <div class="loadsim-title">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          Load simulation
+        </div>
+        <div class="loadsim-sub">First-order steady-state estimate · pick a workload, see if the pool sustains it · not a substitute for fio</div>
+      </div>
+    </div>
+    <div class="loadsim-picker" id="loadSimPicker"></div>
+    <div class="loadsim-details" id="loadSimDetails"></div>
+    <div class="loadsim-results" id="loadSimResults"></div>
+  </section>
+
+  <!-- SAVED POOLS -->
+  <section>
+    <div class="section-label section-label-row">
+      <span>Saved pools</span>
+      <span class="section-label-meta tnum" id="savedCount"></span>
+    </div>
+    <div class="saved-row" id="savedRow"></div>
+  </section>
+
+  <!-- COMPARE -->
+  <section class="panel compare-panel" id="comparePanel" style="display:none;">
+    <div class="panel-head">
+      <div class="panel-head-text">
+        <div class="panel-title">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="15" y2="12"/><line x1="3" y1="18" x2="9" y2="18"/></svg>
+          Compare saved pools
+        </div>
+        <div class="panel-sub">Click a column to sort · best value highlighted</div>
+      </div>
+    </div>
+    <div class="compare-wrap" id="comparisonContainer"></div>
+  </section>
+
+  <!-- DRIVE CATALOG — always visible, primary content -->
+  <section class="catalog-panel">
+    <div class="catalog-panel-header">
+      <div class="panel-head-text">
+        <div class="catalog-panel-title">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v6c0 1.66 4 3 9 3s9-1.34 9-3V5"/><path d="M3 11v6c0 1.66 4 3 9 3s9-1.34 9-3v-6"/></svg>
+          Drive catalog
+        </div>
+        <div class="catalog-panel-sub">Real, currently-shipping drives — specs from manufacturer datasheets · live price/TB per region</div>
+      </div>
+      <div class="catalog-panel-counts" id="catalogCounts"></div>
+    </div>
+
+    <!-- LIVE PRICING — controls the live $/TB column of the table below -->
+    <div id="priceToolbar" class="price-toolbar catalog-price-toolbar"></div>
+
+    <table class="bp-const-table bp-product-table" id="productCatalogTable">
+      <thead>
+        <tr>
+          <th>Drive</th>
+          <th>Tier</th>
+          <th class="num">Cap</th>
+          <th class="num">Price/TB</th>
+          <th class="num">MTBF (M h)</th>
+          <th class="num">AFR</th>
+          <th class="num">URE</th>
+          <th>Ref</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <details class="catalog-explainer">
+      <summary>
+        <span class="catalog-explainer-chev">▾</span>
+        How these numbers are sourced — direct vs. derived
+      </summary>
+      <div class="catalog-explainer-body">
+        <p>
+          When you pick a drive, its MTBF, URE rate, and per-disk IOPS/throughput are used directly in the
+          failure &amp; rebuild model — replacing the generic "HDD / SSD / NVMe" defaults. Per-disk throughput
+          is capped at 4× the type baseline so a single fast NVMe drive doesn't project unrealistic pool-level
+          numbers (controllers, CPU, and ZFS itself become the bottleneck long before raw drive throughput does).
+        </p>
+        <p><strong>What the datasheets actually publish:</strong></p>
+        <ul>
+          <li><strong>MTBF / URE</strong> — published for almost all enterprise &amp; NAS drives. Most consumer HDD
+            datasheets (BarraCuda, WD Blue, Toshiba P300) and Samsung consumer SSDs omit URE; the catalog uses
+            conservative class estimates and labels them as such in source comments.</li>
+          <li><strong>SSD / NVMe random IOPS &amp; sequential MB/s</strong> — published in every datasheet we cite.
+            Catalog values are taken verbatim for the representative capacity (largest typically; 1 TB SKUs cap lower).</li>
+          <li><strong>HDD sequential MB/s</strong> — published; capacity-dependent. Catalog uses the most
+            representative capacity per family.</li>
+          <li><strong>HDD random IOPS</strong> — Seagate Exos and WD Ultrastar publish them (4 K QD16 / QD32);
+            catalog uses datasheet figures. NAS, surveillance, and consumer HDDs do <em>not</em> publish random IOPS.
+            For those models the catalog uses ~120 IOPS for 7200 rpm and ~80–100 IOPS for 5400 rpm, derived from
+            average rotational latency + seek time. Treat HDD random IOPS as physics estimates, not vendor numbers.</li>
+          <li><strong>Price/TB</strong> — fetched live from every retailer for the selected region (cheapest wins),
+            fallback baked-in USD estimate. Always an estimate, never a quote.</li>
+        </ul>
+      </div>
+    </details>
+  </section>
+
+  <!-- METHODOLOGY & REFERENCES -->
+  <section class="bp-sources-section">
+    <details class="bp-sources">
+      <summary>
+        <span class="bp-sources-icon">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+        </span>
+        Failure model & references
+        <span class="bp-sources-chev">▾</span>
+      </summary>
+      <div class="bp-sources-body">
+
+        <div class="bp-sources-block">
+          <div class="bp-sources-label">Disk failure rate (MTBF / AFR)</div>
+          <p>
+            Per-disk failure follows an exponential model with rate <span class="bp-mono">λ = 1 / MTBF</span>.
+            Annual Failure Rate ≈ 8760 / MTBF. Defaults used when you select <em>"Custom drive"</em>:
+          </p>
+          <table class="bp-const-table">
+            <thead><tr><th>Type</th><th>MTBF (h)</th><th>AFR</th><th>Source</th></tr></thead>
+            <tbody>
+              <tr><td>HDD</td>  <td>1,200,000</td><td>~0.73 %</td><td>Seagate Enterprise spec <span class="bp-cite">[A1]</span></td></tr>
+              <tr><td>SSD</td>  <td>2,000,000</td><td>~0.44 %</td><td>Enterprise SSD datasheet typical</td></tr>
+              <tr><td>NVMe</td> <td>2,500,000</td><td>~0.35 %</td><td>Datacenter NVMe class <span class="bp-cite">[C4]</span></td></tr>
+            </tbody>
+          </table>
+          <p class="bp-sources-note">
+            Real-world fleet data tracks somewhat higher: Backblaze reported a <strong>1.36 % annual failure rate</strong> across 344k drives in 2025 (down from 1.55 % in 2024). Treat the spec MTBF as a best case. <span class="bp-cite">[D1]</span>
+          </p>
+        </div>
+
+        <div class="bp-sources-block">
+          <div class="bp-sources-label">Unrecoverable Read Error (URE) risk</div>
+          <p>
+            Probability of at least one URE while reading <span class="bp-mono">B</span> bits during resilver:
+            <span class="bp-mono">P = 1 − e<sup>−B·r</sup></span>, where <span class="bp-mono">r</span> is the per-bit error rate.
+          </p>
+          <table class="bp-const-table">
+            <thead><tr><th>Class</th><th>URE rate</th><th>≈ 1 error per</th></tr></thead>
+            <tbody>
+              <tr><td>Consumer HDD (e.g. WD Red Plus)</td><td>1 in 10<sup>14</sup></td><td>12.5 TB read</td></tr>
+              <tr><td>Enterprise / NAS HDD (e.g. Exos, IronWolf Pro)</td><td>1 in 10<sup>15</sup></td><td>125 TB read</td></tr>
+              <tr><td>Datacenter SSD</td><td>1 in 10<sup>16</sup></td><td>1.25 PB read</td></tr>
+              <tr><td>NVMe (consumer / DC)</td><td>1 in 10<sup>17</sup></td><td>12.5 PB read</td></tr>
+            </tbody>
+          </table>
+          <p class="bp-sources-note">
+            Manufacturer datasheets quote URE as a worst-case bound, not an average — measured rates are often 10–20× lower in the field. <span class="bp-cite">[D2]</span>
+          </p>
+        </div>
+
+        <div class="bp-sources-block">
+          <div class="bp-sources-label">Resilver-window data loss</div>
+          <p>
+            After one disk fails, the vdev can survive up to <span class="bp-mono">tol</span> more failures
+            (mirror = N−1, RAID-Z<em>n</em> = <em>n</em>). Probability of exceeding tolerance during resilver
+            window <span class="bp-mono">t</span> is approximated by a binomial tail with
+            <span class="bp-mono">p = 1 − e<sup>−λt</sup></span> per surviving disk.
+            URE risk during the read-every-bit rebuild is added on top.
+          </p>
+          <p class="bp-sources-note">
+            <strong>MTTDL</strong> (mean time to data loss) ≈ <span class="bp-mono">1 / (AFR<sub>pool</sub> · P<sub>loss|failure</sub>)</span>.
+            This is a model, not a guarantee — correlated failures (same batch, shared PSU, vibration) and silent corruption
+            aren't captured. Always have backups.
+          </p>
+        </div>
+
+        <div class="bp-sources-block bp-sources-refs">
+          <div class="bp-sources-label">References</div>
+          <p class="bp-sources-note" style="margin-top:0; margin-bottom:8px;"><strong>Drive datasheets</strong></p>
+          <ol class="bp-refs">
+            <li><span class="bp-cite">[A1]</span> <a href="https://www.seagate.com/products/enterprise-drives/exos-x/" target="_blank" rel="noopener noreferrer">Seagate Exos X18 / X20 / X22 product page</a> — 2.5 M h MTBF, 1 sector per 10<sup>15</sup> bits, 285 MB/s sustained.</li>
+            <li><span class="bp-cite">[A2]</span> <a href="https://www.westerndigital.com/products/internal-drives/wd-gold-hdd" target="_blank" rel="noopener noreferrer">WD Gold Enterprise HDD datasheet</a> — 2.5 M h MTBF, 1 in 10<sup>15</sup> URE.</li>
+            <li><span class="bp-cite">[A3]</span> <a href="https://www.toshiba-storage.com/products/toshiba-enterprise-hard-drive-mg10/" target="_blank" rel="noopener noreferrer">Toshiba MG10 series datasheet</a> — 2.5 M h MTBF, 1 in 10<sup>15</sup> URE.</li>
+            <li><span class="bp-cite">[A4]</span> <a href="https://www.seagate.com/products/nas-drives/ironwolf-pro-hard-drive/" target="_blank" rel="noopener noreferrer">Seagate IronWolf Pro / IronWolf product page</a> — 1.2 M h MTBF (Pro) / 1 M h MTBF, 300 TB/yr workload rating.</li>
+            <li><span class="bp-cite">[A5]</span> <a href="https://www.westerndigital.com/products/internal-drives/wd-red-pro-sata-hdd" target="_blank" rel="noopener noreferrer">WD Red Pro / Red Plus / Purple datasheet</a> — 1 M h MTBF, 1 in 10<sup>14</sup> URE.</li>
+            <li><span class="bp-cite">[A6]</span> <a href="https://www.seagate.com/products/hard-drives/barracuda-hard-drive/" target="_blank" rel="noopener noreferrer">Seagate BarraCuda</a> · <a href="https://www.westerndigital.com/products/internal-drives/wd-blue-hdd" target="_blank" rel="noopener noreferrer">WD Blue</a> · <a href="https://www.toshiba-storage.com/products/toshiba-desktop-internal-hard-drive-p300/" target="_blank" rel="noopener noreferrer">Toshiba P300</a> — desktop class, 600 k–1 M h MTBF, 1 in 10<sup>14</sup> URE.</li>
+            <li><span class="bp-cite">[A7]</span> WD Ultrastar DC <a href="https://documents.westerndigital.com/content/dam/doc-library/en_us/assets/public/western-digital/product/data-center-drives/ultrastar-dc-hc500-series/data-sheet-ultrastar-dc-hc550.pdf" target="_blank" rel="noopener noreferrer">HC550</a> · <a href="https://documents.westerndigital.com/content/dam/doc-library/en_us/assets/public/western-digital/product/data-center-drives/ultrastar-dc-hc500-series/data-sheet-ultrastar-dc-hc560.pdf" target="_blank" rel="noopener noreferrer">HC560</a> · <a href="https://documents.westerndigital.com/content/dam/doc-library/en_us/assets/public/western-digital/product/data-center-drives/ultrastar-dc-hc500-series/data-sheet-ultrastar-dc-hc570.pdf" target="_blank" rel="noopener noreferrer">HC570</a> · <a href="https://documents.westerndigital.com/content/dam/doc-library/en_us/assets/public/western-digital/product/data-center-drives/ultrastar-dc-hc500-series/data-sheet-ultrastar-dc-hc580.pdf" target="_blank" rel="noopener noreferrer">HC580</a> datasheets — 7200 rpm helium, 2.5 M h MTBF, 1 in 10<sup>15</sup> URE, 269–298 MB/s sustained.</li>
+            <li><span class="bp-cite">[B1]</span> <a href="https://semiconductor.samsung.com/consumer-storage/internal-ssd/870evo/" target="_blank" rel="noopener noreferrer">Samsung 870 EVO product brief</a> — 1.5 M h MTBF, 560/530 MB/s seq, 98k/88k IOPS.</li>
+            <li><span class="bp-cite">[B2]</span> <a href="https://semiconductor.samsung.com/consumer-storage/internal-ssd/870qvo/" target="_blank" rel="noopener noreferrer">Samsung 870 QVO product brief</a> — QLC NAND, 1.5 M h MTBF.</li>
+            <li><span class="bp-cite">[B3]</span> <a href="https://www.crucial.com/ssd/mx500/ct1000mx500ssd1" target="_blank" rel="noopener noreferrer">Crucial MX500 product brief</a> — 1.8 M h MTBF, 95k/90k IOPS.</li>
+            <li><span class="bp-cite">[B4]</span> <a href="https://semiconductor.samsung.com/ssd/datacenter-ssd/pm893/" target="_blank" rel="noopener noreferrer">Samsung PM893 datacenter SATA datasheet</a> — 2 M h MTBF, 97k/31k IOPS.</li>
+            <li><span class="bp-cite">[C1]</span> <a href="https://semiconductor.samsung.com/consumer-storage/internal-ssd/990-pro/" target="_blank" rel="noopener noreferrer">Samsung 990 Pro datasheet</a> — PCIe 4.0, 1.55M/1.4M IOPS, 7.45 / 6.9 GB/s.</li>
+            <li><span class="bp-cite">[C2]</span> <a href="https://www.westerndigital.com/products/internal-drives/wd-black-sn850x-nvme-ssd" target="_blank" rel="noopener noreferrer">WD Black SN850X datasheet</a> — 1.75 M h MTBF, 1.2M/1.1M IOPS.</li>
+            <li><span class="bp-cite">[C3]</span> <a href="https://semiconductor.samsung.com/ssd/datacenter-ssd/pm9a3/" target="_blank" rel="noopener noreferrer">Samsung PM9A3 U.2 datasheet</a> — datacenter NVMe, 2 M h MTBF.</li>
+            <li><span class="bp-cite">[C4]</span> <a href="https://www.solidigm.com/products/data-center/d7/p5520.html" target="_blank" rel="noopener noreferrer">Solidigm D7-P5520 datasheet</a> — 2.5 M h MTBF, 1 sector per 10<sup>17</sup> bits.</li>
+            <li><span class="bp-cite">[C5]</span> <a href="https://americas.kioxia.com/en-us/business/ssd/enterprise-ssd.html" target="_blank" rel="noopener noreferrer">Kioxia CD8-R datasheet</a> — datacenter NVMe, 2.5 M h MTBF.</li>
+          </ol>
+          <p class="bp-sources-note" style="margin-top:10px; margin-bottom:6px;"><strong>Reliability research</strong></p>
+          <ol class="bp-refs">
+            <li><span class="bp-cite">[D1]</span> <a href="https://www.backblaze.com/blog/backblaze-drive-stats-for-2024/" target="_blank" rel="noopener noreferrer">Backblaze <em>Drive Stats 2024</em></a> — 1.36 % fleet AFR across 344,196 drives.</li>
+            <li><span class="bp-cite">[D2]</span> <a href="https://www.usenix.org/legacy/event/fast08/tech/full_papers/bairavasundaram/bairavasundaram.pdf" target="_blank" rel="noopener noreferrer">Bairavasundaram et al., <em>An Analysis of Data Corruption in the Storage Stack</em> (FAST '08)</a> — observed unrecoverable read error rates 1–2 orders of magnitude lower than spec.</li>
+          </ol>
+          <p class="bp-sources-note bp-sources-disclaimer">
+            All probabilities are first-order estimates suitable for comparing layouts.
+            They aren't a substitute for proper reliability modelling on a specific hardware fleet.
+          </p>
+        </div>
+
+      </div>
+    </details>
+  </section>
+
+</main>
+
+
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
